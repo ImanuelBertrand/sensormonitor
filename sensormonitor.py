@@ -25,7 +25,7 @@ class SensorMonitor:
             return False
         try:
             result = json.loads(response.text)
-        except ValueError as err:
+        except ValueError:
             logging.error("Response could not be decoded: " + response.text)
             return False
 
@@ -45,11 +45,12 @@ class SensorMonitor:
         SensorMonitor.sensors = []
         idents = {}
         for data in Config.get("Sensors"):
-            ident = data["Name"] + "///" + data["Group"]
+            sensor = Sensor(data)
+            ident = sensor.name + "///" + sensor.group
             if ident in idents:
                 raise Exception("There can not be multiple sensors with the same group and name!")
             idents[ident] = ident
-            SensorMonitor.sensors.append(Sensor(data["Name"], data["Group"], data["Backend"], data))
+            SensorMonitor.sensors.append(sensor)
 
     @staticmethod
     def run():

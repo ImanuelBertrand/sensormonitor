@@ -2,10 +2,12 @@ Intervall: 60s
 Server: https://example.com/push
 Sensors:
   - Name: CO2
-    Type: i2c
+    Group: Living Room
+    Backend: i2c
     I2c:
       Address: 19af49
   - Name: Temp
-    Type: i2c
+    Group: Living Room
+    Backend: i2c
     I2C:
       Address: 19af49
