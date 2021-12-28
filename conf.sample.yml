@@ -1,9 +1,10 @@
-Intervall: 60s
-Server: https://example.com/push
+Interval: 60s
+Server:
+  Address: https://example.com/push
 Sensors:
   - Name: CO2
     Group: Living Room
-    Backend: i2c
+    Backend: i2c # i2c / random
     I2c:
       Address: 19af49
   - Name: Temp

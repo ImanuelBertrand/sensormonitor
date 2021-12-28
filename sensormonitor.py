@@ -1,8 +1,7 @@
 import json
 import logging
-
 import requests
-
+import time
 from config import Config
 from sensor import Sensor
 
@@ -36,9 +35,15 @@ class SensorMonitor:
 
     @staticmethod
     def read_sensors():
+        data = []
         for sensor in SensorMonitor.sensors:
-            print(sensor.name + " in " + sensor.group + ": " + str(sensor.read()))
-            pass
+            data.append({
+                "name": sensor.name,
+                "group": sensor.group,
+                "value": sensor.read(),
+                "time": round(time.time()),
+            })
+        return data
 
     @staticmethod
     def setup_sensors():
@@ -55,6 +60,8 @@ class SensorMonitor:
     @staticmethod
     def run():
         SensorMonitor.setup_sensors()
-        SensorMonitor.read_sensors()
-
-        pass
+        interval = Config.get_interval()
+        while True:
+            data = SensorMonitor.read_sensors()
+            SensorMonitor.send_data(data)
+            time.sleep(interval)

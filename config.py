@@ -1,6 +1,7 @@
+import re
+
 import yaml
 from os.path import exists
-from enum import Enum
 
 
 class Config:
@@ -35,6 +36,21 @@ class Config:
             else:
                 return default
         return data
+
+    @staticmethod
+    def get_interval():
+        value = str(Config.get("Interval"))
+        if value is None:
+            raise Exception("Missing interval configuration")
+        print(value)
+        match = re.fullmatch(r"(\d+)([smh]?)", value)
+        if match is None:
+            raise Exception("Invalid interval configuration")
+
+        number = int(match.group(1))
+        unit = match.group(2)
+        factor = {"": 1, "s": 1, "m": 60, "h": 3600}.get(unit)
+        return number * factor
 
     @staticmethod
     def dump():
