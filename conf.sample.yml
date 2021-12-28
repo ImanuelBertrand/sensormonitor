@@ -1,14 +1,24 @@
 Interval: 60s
 Server:
   Address: https://example.com/push
+  # Username: example
+  # Password: example
 Sensors:
   - Name: CO2
     Group: Living Room
-    Backend: i2c # i2c / random
+    Backend: i2c # i2c, random
     I2c:
-      Address: 19af49
+      Bus: 1
+      Address: 0x5e
+      Register: 0
+      Length: 2
+      Scale: 1
   - Name: Temp
     Group: Living Room
     Backend: i2c
-    I2C:
-      Address: 19af49
+    I2c:
+      Bus: 1
+      Address: 0x5e
+      Register: 2
+      Length: 2
+      Scale: 1

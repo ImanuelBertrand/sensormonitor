@@ -1,13 +1,17 @@
+import datetime
 import json
 import logging
 import requests
+import sqlite3
 import time
 from config import Config
+from i2c import I2C
 from sensor import Sensor
 
 
 class SensorMonitor:
     sensors = None
+    db: sqlite3.Connection = None
 
     @staticmethod
     def send_data(data) -> bool:
@@ -34,6 +38,26 @@ class SensorMonitor:
         logging.error("Unsuccessful call: " + str(result))
 
     @staticmethod
+    def send_all_data():
+        db = SensorMonitor.db
+        db.row_factory = sqlite3.Row
+        rows = db.execute("SELECT * FROM readings").fetchall()
+        data = []
+        ids = []
+        for row in rows:
+            ids.append(str(int(row["id"])))
+            _row = dict(zip(row.keys(), row))
+            del _row["id"]
+            data.append(_row)
+
+        if SensorMonitor.send_data(data):
+            db.execute("DELETE FROM readings WHERE id IN (" + ",".join(ids) + ")")
+            db.commit()
+            print("Sent and deleted data")
+        else:
+            print("Failed to send")
+
+    @staticmethod
     def read_sensors():
         data = []
         for sensor in SensorMonitor.sensors:
@@ -41,9 +65,17 @@ class SensorMonitor:
                 "name": sensor.name,
                 "group": sensor.group,
                 "value": sensor.read(),
-                "time": round(time.time()),
+                "time": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S%z"),
             })
+        I2C.close_all()
         return data
+
+    @staticmethod
+    def save_data(entries):
+        sql = "INSERT INTO readings (sensor, `group`, time, value) VALUES (:name, :group, :value, :time)"
+        for entry in entries:
+            SensorMonitor.db.execute(sql, entry)
+        SensorMonitor.db.commit()
 
     @staticmethod
     def setup_sensors():
@@ -58,10 +90,24 @@ class SensorMonitor:
             SensorMonitor.sensors.append(sensor)
 
     @staticmethod
+    def setup_database():
+        db = sqlite3.connect("data.db")
+        db.execute("CREATE TABLE IF NOT EXISTS readings ("
+                   "id INTEGER PRIMARY KEY, "
+                   "sensor TEXT, "
+                   "`group` TEXT, "
+                   "time TEXT, "
+                   "value FLOAT)")
+        SensorMonitor.db = db
+
+    @staticmethod
     def run():
         SensorMonitor.setup_sensors()
+        SensorMonitor.setup_database()
         interval = Config.get_interval()
         while True:
+            loop_started = time.time()
             data = SensorMonitor.read_sensors()
-            SensorMonitor.send_data(data)
-            time.sleep(interval)
+            SensorMonitor.save_data(data)
+            SensorMonitor.send_all_data()
+            time.sleep(interval - time.time() + loop_started)

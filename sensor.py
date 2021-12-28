@@ -1,3 +1,4 @@
+from i2c import I2C
 import random
 
 from config import Config
@@ -27,9 +28,23 @@ class Sensor:
             raise Exception("Sensor setup incomplete - Name, Group and Backend must be set!")
 
     def read_i2c(self):
-        address = self.get_config("i2c.address")
+        bus_nr = self.get_config("I2C.Bus")
+        address = self.get_config("I2C.Address")
+        register = self.get_config("I2C.Register")
+        length = self.get_config("I2C.Length")
+        scale = self.get_config("I2C.Scale")
+
         if address is None:
             raise Exception("I2C address not defined")
+
+        bus = I2C.get_bus(bus_nr)
+        data = bus.read_i2c_block_data(address, register, length)
+
+        value = 0
+        for entry in data:
+            value = (value << 8) + entry
+
+        return value / scale
 
     def get_config(self, key, default=None):
         return Config.get(key=key, default=default, data=self.config)
