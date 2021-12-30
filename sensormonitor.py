@@ -14,9 +14,13 @@ class SensorMonitor:
 
     @staticmethod
     def send_data(data) -> bool:
+        url = Config.get("Server.Address")
+        if url is None:
+            return False
+
         try:
             response = requests.post(
-                url=Config.get("Server.Address"),
+                url=url,
                 json=data,
                 auth=(
                     Config.get("Server.Username"),
