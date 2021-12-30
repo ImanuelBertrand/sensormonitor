@@ -5,7 +5,6 @@ import requests
 import sqlite3
 import time
 from config import Config
-from i2c import I2C
 from sensor import Sensor
 
 
@@ -15,14 +14,19 @@ class SensorMonitor:
 
     @staticmethod
     def send_data(data) -> bool:
-        response = requests.post(
-            url=Config.get("Server.Address"),
-            json=data,
-            auth=(
-                Config.get("Server.Username"),
-                Config.get("Server.Password")
+        try:
+            response = requests.post(
+                url=Config.get("Server.Address"),
+                json=data,
+                auth=(
+                    Config.get("Server.Username"),
+                    Config.get("Server.Password")
+                )
             )
-        )
+        except requests.exceptions.RequestException as e:
+            logging.error("Exception while trying to send data")
+            return False
+
         if response.status_code != 200:
             logging.error("Received status code " + str(response.status_code) + " with body: " + response.text)
             return False
@@ -42,6 +46,11 @@ class SensorMonitor:
         db = SensorMonitor.db
         db.row_factory = sqlite3.Row
         rows = db.execute("SELECT * FROM readings").fetchall()
+
+        if len(rows) == 0:
+            print("No data to send")
+            return
+
         data = []
         ids = []
         for row in rows:
@@ -55,23 +64,39 @@ class SensorMonitor:
             db.commit()
             print("Sent and deleted data")
         else:
-            print("Failed to send")
+            logging.error("Failed to send data")
 
     @staticmethod
     def read_sensors():
         data = []
         for sensor in SensorMonitor.sensors:
-            data.append({
-                "name": sensor.name,
-                "group": sensor.group,
-                "value": sensor.read(),
-                "time": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S%z"),
-            })
-        I2C.close_all()
+            value = sensor.read()
+            if value is None:
+                continue
+
+            if isinstance(value, list):
+                data += value
+                continue
+
+            if not isinstance(value, dict):
+                value = {time.time(): value}
+
+            if len(value) == 0:
+                continue
+            for t in value:
+                data.append({
+                    "name": sensor.name,
+                    "group": sensor.group,
+                    "value": value[t],
+                    "time": datetime.datetime.fromtimestamp(t).strftime("%Y-%m-%d %H:%M:%S%z"),
+                })
         return data
 
     @staticmethod
     def save_data(entries):
+        if len(entries) == 0:
+            return
+
         sql = "INSERT INTO readings (sensor, `group`, time, value) VALUES (:name, :group, :value, :time)"
         for entry in entries:
             SensorMonitor.db.execute(sql, entry)
@@ -80,13 +105,8 @@ class SensorMonitor:
     @staticmethod
     def setup_sensors():
         SensorMonitor.sensors = []
-        idents = {}
         for data in Config.get("Sensors"):
             sensor = Sensor(data)
-            ident = sensor.name + "///" + sensor.group
-            if ident in idents:
-                raise Exception("There can not be multiple sensors with the same group and name!")
-            idents[ident] = ident
             SensorMonitor.sensors.append(sensor)
 
     @staticmethod
@@ -102,12 +122,12 @@ class SensorMonitor:
 
     @staticmethod
     def run():
+        logging.info('Starting application')
         SensorMonitor.setup_sensors()
         SensorMonitor.setup_database()
-        interval = Config.get_interval()
         while True:
             loop_started = time.time()
             data = SensorMonitor.read_sensors()
             SensorMonitor.save_data(data)
             SensorMonitor.send_all_data()
-            time.sleep(interval - time.time() + loop_started)
+            time.sleep(max([0, 1 - time.time() + loop_started]))

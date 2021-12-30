@@ -1,4 +1,4 @@
-import smbus
+import smbus2
 
 
 class I2C:
@@ -7,7 +7,7 @@ class I2C:
     @staticmethod
     def get_bus(nr):
         if nr not in I2C.buses:
-            I2C.buses[nr] = smbus.SMBus(nr)
+            I2C.buses[nr] = smbus2.SMBus(nr)
         return I2C.buses[nr]
 
     @staticmethod
