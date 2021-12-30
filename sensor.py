@@ -7,6 +7,7 @@ import random
 import sgp30
 import datetime
 import logging
+from pprint import pp
 
 
 class AbstractSensor:
@@ -89,18 +90,20 @@ class SensorSgp30(AbstractSensor):
             self.sgp30_device.start_measurement()
 
             if os.path.exists(self.__get_sgp30_baseline_file(self.sgp30_device)):
+                logging.info("Loading baseline")
                 f = open(self.__get_sgp30_baseline_file(self.sgp30_device), 'r')
                 contents = f.read()
                 f.close()
                 bl = json.loads(contents)
-                if bl is not dict:
+                if not isinstance(bl, dict):
                     bl = {}
                 if 'co2' not in bl:
                     bl['co2'] = None
                 if 'voc' not in bl:
                     bl['voc'] = None
 
-                self.sgp30_device.set_baseline(bl['co2'], bl['voc'])
+                if bl['co2'] is not None and bl['voc'] is not None:
+                    self.sgp30_device.set_baseline(bl['co2'], bl['voc'])
 
         return self.sgp30_device
 
