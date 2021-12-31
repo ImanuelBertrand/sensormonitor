@@ -120,6 +120,7 @@ class Sensor(AbstractSensor):
     def __init__(self, config: dict):
         super().__init__(config)
         Sensor.sgp30_devices = {}
+        self.last_read = 0
         self.sgp30 = None
         self.values = {}
         self.validate_config()
@@ -210,7 +211,11 @@ class Sensor(AbstractSensor):
 
         return result
 
+    def should_read_now(self):
+        return time.time() - self.last_read >= Config.get_interval(self._get_config('Interval', "1s"))
+
     def read(self):
+        self.last_read = time.time()
         if self.backend == 'i2c':
             return self.__read_i2c()
 

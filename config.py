@@ -38,8 +38,10 @@ class Config:
         return data
 
     @staticmethod
-    def get_interval():
-        value = str(Config.get("Interval"))
+    def get_interval(value=None):
+        if value is None:
+            value = str(Config.get("Interval"))
+
         if value is None:
             raise Exception("Missing interval configuration")
         match = re.fullmatch(r"(\d+)([smh]?)", value)

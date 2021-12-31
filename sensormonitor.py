@@ -52,7 +52,6 @@ class SensorMonitor:
         rows = db.execute("SELECT * FROM readings").fetchall()
 
         if len(rows) == 0:
-            print("No data to send")
             return
 
         data = []
@@ -66,7 +65,6 @@ class SensorMonitor:
         if SensorMonitor.send_data(data):
             db.execute("DELETE FROM readings WHERE id IN (" + ",".join(ids) + ")")
             db.commit()
-            print("Sent and deleted data")
         else:
             logging.error("Failed to send data")
 
@@ -74,6 +72,9 @@ class SensorMonitor:
     def read_sensors():
         data = []
         for sensor in SensorMonitor.sensors:
+            if not sensor.should_read_now():
+                continue
+
             value = sensor.read()
             if value is None:
                 continue
@@ -101,7 +102,7 @@ class SensorMonitor:
         if len(entries) == 0:
             return
 
-        sql = "INSERT INTO readings (sensor, `group`, time, value) VALUES (:name, :group, :value, :time)"
+        sql = "INSERT INTO readings (sensor, `group`, time, value) VALUES (:name, :group, :time, :value)"
         for entry in entries:
             SensorMonitor.db.execute(sql, entry)
         SensorMonitor.db.commit()
@@ -129,9 +130,16 @@ class SensorMonitor:
         logging.info('Starting application')
         SensorMonitor.setup_sensors()
         SensorMonitor.setup_database()
+        SensorMonitor.send_all_data()
+        last_sent = time.time()
+        interval = Config.get_interval()
         while True:
             loop_started = time.time()
             data = SensorMonitor.read_sensors()
             SensorMonitor.save_data(data)
-            SensorMonitor.send_all_data()
-            time.sleep(max([0, 1 - time.time() + loop_started]))
+            if time.time() - last_sent >= interval:
+                SensorMonitor.send_all_data()
+                last_sent = time.time()
+            sleeptime = max([0, 1 - time.time() + loop_started])
+            logging.info("Sleeping for " + str(sleeptime))
+            time.sleep(sleeptime)
