@@ -2,11 +2,12 @@ import re
 
 import yaml
 from os.path import exists
+import os
 
 
 class Config:
     data: dict = None
-    config_file: str = 'conf.yml'
+    config_file: str = os.path.dirname(__file__) + '/conf.yml'
 
     @staticmethod
     def load_file(file_name: str):

@@ -5,7 +5,7 @@ class I2C:
     buses: dict = {}
 
     @staticmethod
-    def get_bus(nr):
+    def get_bus(nr) -> smbus2.SMBus:
         if nr not in I2C.buses:
             I2C.buses[nr] = smbus2.SMBus(nr)
         return I2C.buses[nr]

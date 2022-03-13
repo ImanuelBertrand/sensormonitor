@@ -19,17 +19,17 @@ class AbstractSensor:
 
     @property
     def name(self):
-        return self._get_config("Name")
+        return self.get_config("Name")
 
     @property
     def group(self):
-        return self._get_config("Group")
+        return self.get_config("Group")
 
     @property
     def backend(self):
-        return self._get_config("Backend")
+        return self.get_config("Backend")
 
-    def _get_config(self, key, default=None, readout_key=None):
+    def get_config(self, key, default=None, readout_key=None):
         if readout_key is not None:
             _key = 'Readouts.' + str(readout_key) + '.' + key
         else:
@@ -49,21 +49,36 @@ class AbstractSensor:
         return default
 
     def _get_i2c_bus(self):
-        return self._get_config("I2C.Bus", 1)
+        return self.get_config("I2C.Bus", 1)
 
     def _get_i2c_address(self, default=None):
-        return self._get_config("I2C.Address", default)
+        return self.get_config("I2C.Address", default)
 
     @staticmethod
     def get_time():
         return datetime.datetime.fromtimestamp(time.time()).strftime("%Y-%m-%d %H:%M:%S%z")
 
     def get_readout_keys(self):
-        values = self._get_config("Readouts")
+        values = self.get_config("Readouts")
         if not isinstance(values, dict):
             return [None]
         else:
             return values.keys()
+
+    def get_result_template(self, readout_key=None):
+        name = self.get_config('Name', "", readout_key)
+        group = self.get_config('Group', "", readout_key)
+        topic = self.get_config('Topic', "sensors/" + group + "/" + name, readout_key)
+        return {
+            "name": name,
+            "group": self.get_config('Group', "", readout_key),
+            "friendly_name": self.get_config('Friendly Name', name, readout_key),
+            'unit_of_measure': self.get_config('Unit', None, readout_key),
+            "device_class": self.get_config("Device Class", None, readout_key),
+            "topic": topic,
+            "precision": self.get_config("Precision", 0, readout_key),
+            "values": {}
+        }
 
 
 class SensorSgp30(AbstractSensor):
@@ -81,7 +96,7 @@ class SensorSgp30(AbstractSensor):
 
     @staticmethod
     def __get_sgp30_baseline_file(sensor: sgp30.SGP30) -> str:
-        return "sgp30_baseline_" + str(sensor.get_unique_id())
+        return os.path.dirname(__file__) + "/sgp30_baseline_" + str(sensor.get_unique_id())
 
     def __get_device(self) -> sgp30.SGP30:
         if self.sgp30_device is None:
@@ -103,6 +118,7 @@ class SensorSgp30(AbstractSensor):
                     bl['voc'] = None
 
                 if bl['co2'] is not None and bl['voc'] is not None:
+                    logging.info("Setting baseline: " + str(bl['co2']) + ' / ' + str(bl['voc']))
                     self.sgp30_device.set_baseline(bl['co2'], bl['voc'])
 
         return self.sgp30_device
@@ -140,8 +156,8 @@ class Sensor(AbstractSensor):
     def get_i2c_block_size(self):
         t = 0
         for readout_key in self.get_readout_keys():
-            register = self._get_config("I2C.Register", 1000, readout_key)
-            length = self._get_config("I2C.Length", 1000, readout_key)
+            register = self.get_config("I2C.Register", 1000, readout_key)
+            length = self.get_config("I2C.Length", 1000, readout_key)
             t = max(t, register + length)
         return t
 
@@ -159,26 +175,22 @@ class Sensor(AbstractSensor):
         except IOError:
             return None
 
-        result = []
+        results = []
         t = self.get_time()
         for readout in self.get_readout_keys():
-            register = self._get_config('I2C.Register', 0, readout_key=readout)
-            length = self._get_config('I2C.Length', readout_key=readout)
-            name = self._get_config('Name', readout_key=readout)
-            group = self._get_config('Group', readout_key=readout)
-            scale = self._get_config('Scale', 1, readout)
+            register = self.get_config('I2C.Register', 0, readout_key=readout)
+            length = self.get_config('I2C.Length', readout_key=readout)
+            scale = self.get_config('Scale', 1, readout)
+
             _data = data[register:register + length]
             value = 0
             for entry in _data:
                 value = value << 8 | entry
 
-            result.append({
-                'name': name,
-                'group': group,
-                'time': t,
-                'value': value / scale
-            })
-        return result
+            _result = self.get_result_template(readout)
+            _result["values"][t] = value / scale
+            results.append(_result)
+        return results
 
     def __read_sgp30(self):
         try:
@@ -186,12 +198,12 @@ class Sensor(AbstractSensor):
         except IOError:
             return None
 
-        result = []
+        results = []
 
         t = self.get_time()
 
         for key in self.get_readout_keys():
-            index = self._get_config("SGP30.Index", readout_key=key)
+            index = self.get_config("SGP30.Index", readout_key=key)
             if index is None:
                 raise Exception('SGP30.Index not defined for readout ' + key + '!')
 
@@ -202,17 +214,14 @@ class Sensor(AbstractSensor):
             else:
                 raise Exception('Invalid SGP30.Index for readout ' + key + '!')
 
-            result.append({
-                "name": self._get_config("Name", readout_key=key),
-                "group": self._get_config("Group", readout_key=key),
-                "value": _value,
-                "time": t
-            })
+            _result = self.get_result_template(key)
+            _result["values"][t] = _value
+            results.append(_result)
 
-        return result
+        return results
 
     def should_read_now(self):
-        return time.time() - self.last_read >= Config.get_interval(self._get_config('Interval', "1s"))
+        return time.time() - self.last_read >= Config.get_interval(self.get_config('Interval', "1s"))
 
     def read(self):
         self.last_read = time.time()
@@ -223,11 +232,9 @@ class Sensor(AbstractSensor):
             return self.__read_sgp30()
 
         if self.backend == 'random':
-            return [{
-                "name": self.name,
-                "group": self.group,
-                "value": random.randint(0, 100),
-                "time": datetime.datetime.fromtimestamp(time.time()).strftime("%Y-%m-%d %H:%M:%S%z"),
-            }]
+            t = datetime.datetime.fromtimestamp(time.time()).strftime("%Y-%m-%d %H:%M:%S%z")
+            _result = self.get_result_template(None)
+            _result["values"][t] = random.randint(0, 100)
+            return [_result]
 
         raise Exception("Sensor type undefined")
