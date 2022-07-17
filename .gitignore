@@ -1,3 +1,4 @@
-conf.yml
+conf-sm01.yml
+conf-*.yml
 monitor.log
 data.db

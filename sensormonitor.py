@@ -1,37 +1,34 @@
-import datetime
+import errno
 import json
 import logging
+import os
 import statistics
 import threading
+import time
 
 import requests
-import sqlite3
-import time
+from paho.mqtt import client as mqtt_client
+from paho.mqtt.client import MQTT_ERR_SUCCESS
+
 from config import Config
 from sensor import Sensor
-import errno
-import os
-import urllib.parse
-from paho.mqtt import client as mqtt_client
 
 
 class SensorMonitor:
     mqtt_client = None
     latest_data = None
     sensors = None
-    db_sensors: sqlite3.Connection = None
-    db_sender: sqlite3.Connection = None
 
     lock = None
 
-    sender_sesson: requests.Session = None
+    sender_session: requests.Session = None
 
     @staticmethod
     def send_data(data, url=None) -> bool:
-        if SensorMonitor.sender_sesson is None:
-            SensorMonitor.sender_sesson = requests.Session()
+        if SensorMonitor.sender_session is None:
+            SensorMonitor.sender_session = requests.Session()
 
-        session = SensorMonitor.sender_sesson
+        session = SensorMonitor.sender_session
 
         if url is None:
             url = Config.get("Server.Address")
@@ -73,29 +70,6 @@ class SensorMonitor:
         return True
 
     @staticmethod
-    def send_all_data():
-        db = SensorMonitor.db_sender
-        db.row_factory = sqlite3.Row
-        rows = db.execute("SELECT * FROM readings").fetchall()
-
-        if len(rows) == 0:
-            return
-
-        data = []
-        ids = []
-        for row in rows:
-            ids.append(str(int(row["id"])))
-            _row = dict(zip(row.keys(), row))
-            del _row["id"]
-            data.append(_row)
-
-        if SensorMonitor.send_data(data):
-            db.execute("DELETE FROM readings WHERE id IN (" + ",".join(ids) + ")")
-            db.commit()
-        else:
-            logging.error("Failed to send data")
-
-    @staticmethod
     def aggregate_data(data, decimals):
         value = round(statistics.mean(data), decimals)
         if decimals == 0:
@@ -105,6 +79,9 @@ class SensorMonitor:
     @staticmethod
     def send_aggregated_data_mqtt(entries):
         client = SensorMonitor.get_mqtt_client()
+        if client is None:
+            return False
+
         for key in entries:
             entry = entries[key]
 
@@ -121,45 +98,21 @@ class SensorMonitor:
             status = result[0]
             if status != 0:
                 logging.error("Failed to send mqtt message for " + topic)
-            client.loop()
+            result = client.loop()
 
-    @staticmethod
-    def send_aggregated_data(entries):
-        for key in entries:
-            entry = entries[key]
-            attributes = {}
-
-            for sensor in SensorMonitor.sensors:
-                for readout in sensor.get_readout_keys():
-                    name = sensor.get_config("Name", readout_key=readout)
-                    group = sensor.get_config("Group", readout_key=readout)
-                    if name == entry["name"] and group == entry["group"]:
-                        friendly_name = sensor.get_config("Friendly Name", readout_key=readout, default=entry["name"])
-                        attributes = {
-                            "friendly_name": entry["group"] + " / " + friendly_name,
-                            "unit_of_measurement": sensor.get_config("Unit", readout_key=readout),
-                            "device_class": sensor.get_config("Device Class", readout_key=readout, default=""),
-                        }
-                        break
-
-            if "precision" in entry:
-                precision = entry["precision"]
-            else:
-                precision = 0
-
-            data = {
-                "attributes": attributes,
-                "entity_id": "sensor." + entry['group'] + "." + entry["name"],
-                "state": SensorMonitor.aggregate_data(entry["values"].values(), precision)
-            }
-            url = str(Config.get("Server.Address"))
-            url = url.replace("%name%", urllib.parse.quote(entry["name"])).replace("%group%", urllib.parse.quote(
-                entry["group"]))
-            SensorMonitor.send_data(data, url)
+            if result != MQTT_ERR_SUCCESS:
+                logging.error("MQTT publishing error: " + str(result))
+                SensorMonitor.mqtt_client = None
 
     @staticmethod
     def get_mqtt_client():
         client = SensorMonitor.mqtt_client
+
+        if isinstance(client, mqtt_client.Client) and client.is_connected():
+            can_loop = SensorMonitor.mqtt_client.loop()
+            if can_loop != MQTT_ERR_SUCCESS:
+                logging.error("MQTT looping error: " + str(can_loop))
+                client = None
 
         if client is None:
             client_id = 'sensormonitor-mqtt-' + os.uname()[1] + '-'
@@ -176,11 +129,6 @@ class SensorMonitor:
             client.on_connect = SensorMonitor.on_mqtt_connect
             client.connect(broker, port)
 
-        # if not SensorMonitor.mqtt_client.is_connected():
-        #    logging.error("MQTT client is not connected, setting to None")
-        #    SensorMonitor.mqtt_client = None
-
-        SensorMonitor.mqtt_client.loop()
         return SensorMonitor.mqtt_client
 
     # noinspection PyUnusedLocal
@@ -217,33 +165,12 @@ class SensorMonitor:
         return data
 
     @staticmethod
-    def save_data(entries):
-        if len(entries) == 0:
-            return
-
-        sql = "INSERT INTO readings (`name`, `group`, time, unit, value) VALUES (:name, :group, :time, :unit, :value)"
-        for entry in entries:
-            SensorMonitor.db_sensors.execute(sql, entry)
-        SensorMonitor.db_sensors.commit()
-
-    @staticmethod
     def setup_sensors():
         SensorMonitor.sensors = []
         for data in Config.get("Sensors"):
             sensor = Sensor(data)
-            SensorMonitor.sensors.append(sensor)
-
-    @staticmethod
-    def setup_database():
-        SensorMonitor.db_sensors = sqlite3.connect(os.path.dirname(__file__) + "/data.db")
-        SensorMonitor.db_sensors.execute("CREATE TABLE IF NOT EXISTS readings ("
-                                         "id INTEGER PRIMARY KEY, "
-                                         "time TEXT, "
-                                         "`name` TEXT, "
-                                         "`group` TEXT, "
-                                         "unit TEXT, "
-                                         "value FLOAT)")
-        SensorMonitor.db_sensors.commit()
+            if sensor.get_config('Active', True):
+                SensorMonitor.sensors.append(sensor)
 
     @staticmethod
     def get_process_lock_file():
@@ -292,7 +219,6 @@ class SensorMonitor:
 
     @staticmethod
     def send_data_loop():
-        SensorMonitor.db_sender = sqlite3.connect(os.path.dirname(__file__) + "/data.db")
         interval = Config.get_interval()
         while True:
             loop_started = time.time()
@@ -301,16 +227,11 @@ class SensorMonitor:
                 entries = SensorMonitor.latest_data.copy()
                 SensorMonitor.latest_data = {}
 
-            #try:
-            #    SensorMonitor.send_aggregated_data(entries)
-            #except:
-            #    pass
-
             try:
                 SensorMonitor.send_aggregated_data_mqtt(entries)
-            except:
+            except Exception as e:
+                logging.error(e)
                 pass
-
 
             sleep_time = max([0, interval - time.time() + loop_started])
             if sleep_time < 0.7:
@@ -329,8 +250,6 @@ class SensorMonitor:
 
         logging.info('Starting application')
         SensorMonitor.setup_sensors()
-        SensorMonitor.setup_sensors()
-        SensorMonitor.setup_database()
 
         logging.info('Starting sender thread')
         SensorMonitor.sender_thread = threading.Thread(target=SensorMonitor.send_data_loop)
