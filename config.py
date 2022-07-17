@@ -24,8 +24,8 @@ class Config:
         if Config.data is None:
             if Config.config_file is None:
                 directory = os.path.dirname(__file__)
-                test = directory + '/conf-' + os.uname()[1] + '.yml'
-                Config.config_file = test if exists(test) else directory + '/conf.yml'
+                test = directory + "/conf-" + os.uname()[1] + ".yml"
+                Config.config_file = test if exists(test) else directory + "/conf.yml"
             Config.load_file(Config.config_file)
         return Config.data
 
@@ -34,7 +34,7 @@ class Config:
         if data is None:
             data = Config.get_config_data()
 
-        path = key.split('.')
+        path = key.split(".")
         for step in path:
             if step in data:
                 data = data[step]

@@ -4,9 +4,13 @@ from sensormonitor import SensorMonitor
 import os
 import traceback
 
-logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s',
-                    filename=os.path.dirname(__file__) + '/monitor.log',
-                    encoding='utf-8', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S%z')
+logging.basicConfig(
+    format="%(asctime)s %(levelname)s: %(message)s",
+    filename=os.path.dirname(__file__) + "/monitor.log",
+    encoding="utf-8",
+    level=logging.INFO,
+    datefmt="%Y-%m-%d %H:%M:%S%z",
+)
 
 try:
     SensorMonitor.run()

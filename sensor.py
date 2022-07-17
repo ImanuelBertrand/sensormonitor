@@ -14,6 +14,7 @@ import sgp30
 
 from config import Config
 from i2c import I2C
+
 # noinspection PyUnresolvedReferences
 import RPi.GPIO as GPIO
 
@@ -21,7 +22,7 @@ import RPi.GPIO as GPIO
 class AbstractSensor:
     def __init__(self, config: dict):
         self.config = config
-        pin = self.get_config('GPIO.Power', False)
+        pin = self.get_config("GPIO.Power", False)
         if pin:
             GPIO.setup(pin, GPIO.OUT)
             GPIO.output(pin, GPIO.LOW)
@@ -45,7 +46,7 @@ class AbstractSensor:
 
     def get_config(self, key, default=None, readout_key=None):
         if readout_key is not None:
-            _key = 'Readouts.' + str(readout_key) + '.' + key
+            _key = "Readouts." + str(readout_key) + "." + key
         else:
             _key = key
 
@@ -70,7 +71,9 @@ class AbstractSensor:
 
     @staticmethod
     def get_time():
-        return datetime.datetime.fromtimestamp(time.time()).strftime("%Y-%m-%d %H:%M:%S%z")
+        return datetime.datetime.fromtimestamp(time.time()).strftime(
+            "%Y-%m-%d %H:%M:%S%z"
+        )
 
     def get_readout_keys(self):
         values = self.get_config("Readouts")
@@ -80,18 +83,18 @@ class AbstractSensor:
             return values.keys()
 
     def get_result_template(self, readout_key=None):
-        name = self.get_config('Name', "", readout_key)
-        group = self.get_config('Group', "", readout_key)
-        topic = self.get_config('Topic', "sensors/" + group + "/" + name, readout_key)
+        name = self.get_config("Name", "", readout_key)
+        group = self.get_config("Group", "", readout_key)
+        topic = self.get_config("Topic", "sensors/" + group + "/" + name, readout_key)
         return {
             "name": name,
-            "group": self.get_config('Group', "", readout_key),
-            "friendly_name": self.get_config('Friendly Name', name, readout_key),
-            'unit_of_measure': self.get_config('Unit', None, readout_key),
+            "group": self.get_config("Group", "", readout_key),
+            "friendly_name": self.get_config("Friendly Name", name, readout_key),
+            "unit_of_measure": self.get_config("Unit", None, readout_key),
             "device_class": self.get_config("Device Class", None, readout_key),
             "topic": topic,
             "precision": self.get_config("Precision", 0, readout_key),
-            "values": {}
+            "values": {},
         }
 
     def __reboot_device(self):
@@ -107,7 +110,7 @@ class SensorShtc3(AbstractSensor):
     def __get_device(self) -> adafruit_shtc3.SHTC3:
         if self.device is None:
             logging.info("Starting SHTC3 sensor")
-            pin = self.get_config('GPIO.Power', False)
+            pin = self.get_config("GPIO.Power", False)
             if pin:
                 GPIO.output(pin, GPIO.LOW)
                 time.sleep(0.2)
@@ -135,7 +138,7 @@ class SensorAhtx0(AbstractSensor):
     def __get_device(self) -> adafruit_ahtx0.AHTx0:
         if self.device is None:
             logging.info("Starting AHTx0 sensor")
-            pin = self.get_config('GPIO.Power', False)
+            pin = self.get_config("GPIO.Power", False)
             if pin:
                 GPIO.output(pin, GPIO.LOW)
                 time.sleep(0.2)
@@ -151,9 +154,9 @@ class SensorAhtx0(AbstractSensor):
         return self.device
 
     def read(self, index):
-        if index == 'relative_humidity':
+        if index == "relative_humidity":
             return self.__get_device().relative_humidity
-        if index == 'temperature':
+        if index == "temperature":
             return self.__get_device().temperature
         raise Exception("Wrong AHTx0 index (" + index + ")!")
 
@@ -168,8 +171,8 @@ class SensorSgp30(AbstractSensor):
     def __save_baseline(self):
         sensor = self.__get_device()
         baseline = sensor.get_baseline()
-        file = open(self.__get_sgp30_baseline_file(sensor), 'w')
-        json.dump({'co2': baseline.equivalent_co2, 'voc': baseline.total_voc}, file)
+        file = open(self.__get_sgp30_baseline_file(sensor), "w")
+        json.dump({"co2": baseline.equivalent_co2, "voc": baseline.total_voc}, file)
         file.close()
 
     def __get_device(self) -> sgp30.SGP30:
@@ -180,7 +183,7 @@ class SensorSgp30(AbstractSensor):
                 logging.critical(e)
             self.last_reboot = time.time()
 
-        reboot_interval = self.get_config('RebootInterval', False)
+        reboot_interval = self.get_config("RebootInterval", False)
         if reboot_interval:
             reboot_interval = Config.parse_time(reboot_interval)
             if time.time() - self.last_reboot >= reboot_interval:
@@ -199,35 +202,39 @@ class SensorSgp30(AbstractSensor):
 
         if os.path.exists(self.__get_sgp30_baseline_file(self.sgp30_device)):
             logging.info("Loading baseline")
-            f = open(self.__get_sgp30_baseline_file(self.sgp30_device), 'r')
+            f = open(self.__get_sgp30_baseline_file(self.sgp30_device), "r")
             contents = f.read()
             f.close()
             bl = json.loads(contents)
             if not isinstance(bl, dict):
                 bl = {}
-            if 'co2' not in bl:
-                bl['co2'] = None
-            if 'voc' not in bl:
-                bl['voc'] = None
+            if "co2" not in bl:
+                bl["co2"] = None
+            if "voc" not in bl:
+                bl["voc"] = None
 
-            if bl['co2'] is not None and bl['voc'] is not None:
-                logging.info("Setting baseline: " + str(bl['co2']) + ' / ' + str(bl['voc']))
-                self.sgp30_device.set_baseline(bl['co2'], bl['voc'])
+            if bl["co2"] is not None and bl["voc"] is not None:
+                logging.info(
+                    "Setting baseline: " + str(bl["co2"]) + " / " + str(bl["voc"])
+                )
+                self.sgp30_device.set_baseline(bl["co2"], bl["voc"])
 
         return self.sgp30_device
 
     @staticmethod
     def __get_sgp30_baseline_file(sensor: sgp30.SGP30) -> str:
-        return os.path.dirname(__file__) + "/sgp30_baseline_" + str(sensor.get_unique_id())
+        return (
+            os.path.dirname(__file__) + "/sgp30_baseline_" + str(sensor.get_unique_id())
+        )
 
     def __power_on(self):
         logging.info("Powering on " + self.backend)
-        pin = self.get_config('GPIO.Power', False)
+        pin = self.get_config("GPIO.Power", False)
         GPIO.output(pin, GPIO.HIGH)
 
     def __power_off(self):
         logging.info("Powering off " + self.backend)
-        pin = self.get_config('GPIO.Power', False)
+        pin = self.get_config("GPIO.Power", False)
         GPIO.output(pin, GPIO.LOW)
         self.sgp30_device = None
 
@@ -257,19 +264,19 @@ class Sensor(AbstractSensor):
 
     def get_sgp30(self):
         i2c_address = self._get_i2c_address()
-        if 'sgp30' + i2c_address not in Sensor.devices:
-            Sensor.devices['sgp30' + i2c_address] = SensorSgp30(self.config)
-        return Sensor.devices['sgp30' + i2c_address]
+        if "sgp30" + i2c_address not in Sensor.devices:
+            Sensor.devices["sgp30" + i2c_address] = SensorSgp30(self.config)
+        return Sensor.devices["sgp30" + i2c_address]
 
     def get_shtc3(self):
-        if 'shtc3' not in self.devices:
-            self.devices['shtc3'] = SensorShtc3(self.config)
-        return self.devices['shtc3']
+        if "shtc3" not in self.devices:
+            self.devices["shtc3"] = SensorShtc3(self.config)
+        return self.devices["shtc3"]
 
     def get_ahtx0(self):
-        if 'ahtx0' not in self.devices:
-            self.devices['ahtx0'] = SensorAhtx0(self.config)
-        return self.devices['ahtx0']
+        if "ahtx0" not in self.devices:
+            self.devices["ahtx0"] = SensorAhtx0(self.config)
+        return self.devices["ahtx0"]
 
     def validate_config(self):
         if not self.backend:
@@ -300,17 +307,17 @@ class Sensor(AbstractSensor):
         results = []
         t = self.get_time()
         for readout in self.get_readout_keys():
-            register = self.get_config('I2C.Register', 0, readout_key=readout)
-            length = self.get_config('I2C.Length', readout_key=readout)
-            scale = self.get_config('Scale', 1, readout)
+            register = self.get_config("I2C.Register", 0, readout_key=readout)
+            length = self.get_config("I2C.Length", readout_key=readout)
+            scale = self.get_config("Scale", 1, readout)
 
-            _data = data[register:register + length]
+            _data = data[register : register + length]
             value = 0
             for entry in _data:
                 value = value << 8 | entry
 
             _result = self.get_result_template(readout)
-            _result["values"][t] = value / scale + self.get_config('Offset', 0, readout)
+            _result["values"][t] = value / scale + self.get_config("Offset", 0, readout)
             results.append(_result)
         return results
 
@@ -327,14 +334,14 @@ class Sensor(AbstractSensor):
         for key in self.get_readout_keys():
             index = self.get_config("SGP30.Index", readout_key=key)
             if index is None:
-                raise Exception('SGP30.Index not defined for readout ' + key + '!')
+                raise Exception("SGP30.Index not defined for readout " + key + "!")
 
-            if index == 'equivalent_co2':
-                _value = value.equivalent_co2 + self.get_config('Offset', 0, key)
-            elif index == 'total_voc':
-                _value = value.total_voc + self.get_config('Offset', 0, key)
+            if index == "equivalent_co2":
+                _value = value.equivalent_co2 + self.get_config("Offset", 0, key)
+            elif index == "total_voc":
+                _value = value.total_voc + self.get_config("Offset", 0, key)
             else:
-                raise Exception('Invalid SGP30.Index for readout ' + key + '!')
+                raise Exception("Invalid SGP30.Index for readout " + key + "!")
 
             _result = self.get_result_template(key)
             _result["values"][t] = _value
@@ -356,14 +363,14 @@ class Sensor(AbstractSensor):
         for key in self.get_readout_keys():
             index = self.get_config("SHTC3.Index", readout_key=key)
             if index is None:
-                raise Exception('SHTC3.Index not defined for readout ' + key + '!')
+                raise Exception("SHTC3.Index not defined for readout " + key + "!")
 
-            if index == 'temperature':
-                _value = temperature + self.get_config('Offset', 0, key)
-            elif index == 'relative_humidity':
-                _value = relative_humidity + self.get_config('Offset', 0, key)
+            if index == "temperature":
+                _value = temperature + self.get_config("Offset", 0, key)
+            elif index == "relative_humidity":
+                _value = relative_humidity + self.get_config("Offset", 0, key)
             else:
-                raise Exception('Invalid SHTC3.Index for readout ' + key + '!')
+                raise Exception("Invalid SHTC3.Index for readout " + key + "!")
 
             _result = self.get_result_template(key)
             _result["values"][t] = _value
@@ -381,9 +388,9 @@ class Sensor(AbstractSensor):
             index = self.get_config("AHTx0.Index", readout_key=key)
             if index is None:
                 logging.info(self.config)
-                raise Exception('AHTx0.Index not defined for readout ' + key + '!')
+                raise Exception("AHTx0.Index not defined for readout " + key + "!")
 
-            _value = self.get_ahtx0().read(index) + self.get_config('Offset', 0, key)
+            _value = self.get_ahtx0().read(index) + self.get_config("Offset", 0, key)
 
             _result = self.get_result_template(key)
             _result["values"][t] = _value
@@ -392,28 +399,32 @@ class Sensor(AbstractSensor):
         return results
 
     def should_read_now(self):
-        return time.time() - self.last_read >= Config.get_interval(self.get_config('Interval', "1s"))
+        return time.time() - self.last_read >= Config.get_interval(
+            self.get_config("Interval", "1s")
+        )
 
     def read(self):
         try:
-            if self.backend == 'i2c':
+            if self.backend == "i2c":
                 self.last_value = self.__read_i2c()
                 return self.last_value
 
-            if self.backend == 'sgp30':
+            if self.backend == "sgp30":
                 self.last_value = self.__read_sgp30()
                 return self.last_value
 
-            if self.backend == 'shtc3':
+            if self.backend == "shtc3":
                 self.last_value = self.__read_shtc3()
                 return self.last_value
 
-            if self.backend == 'ahtx0':
+            if self.backend == "ahtx0":
                 self.last_value = self.__read_ahtx0()
                 return self.last_value
 
-            if self.backend == 'random':
-                t = datetime.datetime.fromtimestamp(time.time()).strftime("%Y-%m-%d %H:%M:%S%z")
+            if self.backend == "random":
+                t = datetime.datetime.fromtimestamp(time.time()).strftime(
+                    "%Y-%m-%d %H:%M:%S%z"
+                )
                 _result = self.get_result_template(None)
                 _result["values"][t] = random.randint(0, 100)
                 return [_result]
