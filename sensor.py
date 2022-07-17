@@ -8,6 +8,7 @@ import traceback
 
 import adafruit_shtc3
 import adafruit_ahtx0
+import adafruit_htu31d
 
 import board
 import sgp30
@@ -161,6 +162,34 @@ class SensorAhtx0(AbstractSensor):
         raise Exception("Wrong AHTx0 index (" + index + ")!")
 
 
+class SensorHtu31d(AbstractSensor):
+    device: adafruit_htu31d.HTU31D = None
+
+    def __init__(self, config: dict):
+        super().__init__(config)
+
+    def __get_device(self) -> adafruit_htu31d.HTU31D:
+        if self.device is None:
+            logging.info("Starting HTU31D sensor")
+            pin = self.get_config("GPIO.Power", False)
+            if pin:
+                GPIO.output(pin, GPIO.LOW)
+                time.sleep(0.2)
+                GPIO.output(pin, GPIO.HIGH)
+            i2c = board.I2C()
+            device = None
+            try:
+                device = adafruit_htu31d.HTU31D(i2c)
+            except Exception as e:
+                logging.info(e)
+            self.device = device
+
+        return self.device
+
+    def read(self):
+        return self.__get_device().measurements
+
+
 class SensorSgp30(AbstractSensor):
     sgp30_device = None
     last_reboot = None
@@ -262,6 +291,11 @@ class Sensor(AbstractSensor):
         self.values = {}
         self.validate_config()
 
+    def get_htu31d(self):
+        if "htu31d" not in self.devices:
+            self.devices["htu31d"] = SensorHtu31d(self.config)
+        return self.devices["htu31d"]
+
     def get_sgp30(self):
         i2c_address = self._get_i2c_address()
         if "sgp30" + i2c_address not in Sensor.devices:
@@ -349,6 +383,34 @@ class Sensor(AbstractSensor):
 
         return results
 
+    def __read_htu31d(self):
+        try:
+            temperature, relative_humidity = self.get_htu31d().read()
+        except IOError:
+            return None
+
+        results = []
+
+        t = self.get_time()
+
+        for key in self.get_readout_keys():
+            index = self.get_config("HTU31D.Index", readout_key=key)
+            if index is None:
+                raise Exception("HTU31D.Index not defined for readout " + key + "!")
+
+            if index == "temperature":
+                _value = temperature + self.get_config("Offset", 0, key)
+            elif index == "relative_humidity":
+                _value = relative_humidity + self.get_config("Offset", 0, key)
+            else:
+                raise Exception("Invalid HTU31D.Index for readout " + key + "!")
+
+            _result = self.get_result_template(key)
+            _result["values"][t] = _value
+            results.append(_result)
+
+        return results
+
     def __read_shtc3(self):
         try:
             temperature, relative_humidity = self.get_shtc3().read()
@@ -415,6 +477,10 @@ class Sensor(AbstractSensor):
 
             if self.backend == "shtc3":
                 self.last_value = self.__read_shtc3()
+                return self.last_value
+
+            if self.backend == "htu31d":
+                self.last_value = self.__read_htu31d()
                 return self.last_value
 
             if self.backend == "ahtx0":
