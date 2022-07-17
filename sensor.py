@@ -9,6 +9,7 @@ import traceback
 import adafruit_shtc3
 import adafruit_ahtx0
 import adafruit_htu31d
+import adafruit_bme680
 
 import board
 import sgp30
@@ -148,6 +149,38 @@ class SensorAhtx0(AbstractSensor):
             device = None
             try:
                 device = adafruit_ahtx0.AHTx0(i2c)
+            except Exception as e:
+                logging.info(e)
+            self.device = device
+
+        return self.device
+
+    def read(self, index):
+        if index == "relative_humidity":
+            return self.__get_device().relative_humidity
+        if index == "temperature":
+            return self.__get_device().temperature
+        raise Exception("Wrong AHTx0 index (" + index + ")!")
+
+
+class SensorGme680(AbstractSensor):
+    device: adafruit_bme680.Adafruit_BME680_I2C = None
+
+    def __init__(self, config: dict):
+        super().__init__(config)
+
+    def __get_device(self) -> adafruit_bme680.Adafruit_BME680_I2C:
+        if self.device is None:
+            logging.info("Starting BME680 sensor")
+            pin = self.get_config("GPIO.Power", False)
+            if pin:
+                GPIO.output(pin, GPIO.LOW)
+                time.sleep(0.2)
+                GPIO.output(pin, GPIO.HIGH)
+            i2c = board.I2C()
+            device = None
+            try:
+                device = adafruit_bme680.Adafruit_BME680_I2C(i2c)
             except Exception as e:
                 logging.info(e)
             self.device = device
@@ -312,6 +345,11 @@ class Sensor(AbstractSensor):
             self.devices["ahtx0"] = SensorAhtx0(self.config)
         return self.devices["ahtx0"]
 
+    def get_gme680(self):
+        if "gme680" not in self.devices:
+            self.devices["gme680"] = SensorGme680(self.config)
+        return self.devices["gme680"]
+
     def validate_config(self):
         if not self.backend:
             raise Exception("Sensor setup incomplete - Backend must be set!")
@@ -460,6 +498,26 @@ class Sensor(AbstractSensor):
 
         return results
 
+    def __read_gme680(self):
+
+        results = []
+
+        t = self.get_time()
+
+        for key in self.get_readout_keys():
+            index = self.get_config("GME680.Index", readout_key=key)
+            if index is None:
+                logging.info(self.config)
+                raise Exception("GME680.Index not defined for readout " + key + "!")
+
+            _value = self.get_gme680().read(index) + self.get_config("Offset", 0, key)
+
+            _result = self.get_result_template(key)
+            _result["values"][t] = _value
+            results.append(_result)
+
+        return results
+
     def should_read_now(self):
         return time.time() - self.last_read >= Config.get_interval(
             self.get_config("Interval", "1s")
@@ -477,6 +535,10 @@ class Sensor(AbstractSensor):
 
             if self.backend == "shtc3":
                 self.last_value = self.__read_shtc3()
+                return self.last_value
+
+            if self.backend == "gme680":
+                self.last_value = self.__read_gme680()
                 return self.last_value
 
             if self.backend == "htu31d":

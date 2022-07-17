@@ -209,7 +209,15 @@ class SensorMonitor:
         pid = file.read()
         file.close()
 
-        result = pid.isnumeric() and SensorMonitor.pid_exists(int(pid))
+        result = False
+        if pid.isnumeric():
+            procfile = f"/proc/{pid}/comm"
+
+            if os.path.exists(procfile):
+                file = open(procfile, "r")
+                name = file.read()
+                file.close()
+                result = name == "main.py"
 
         if not result:
             os.remove(filename)
@@ -218,6 +226,7 @@ class SensorMonitor:
 
     @staticmethod
     def save_process_lock():
+        logging.info("Saving process lock")
         file = open(SensorMonitor.get_process_lock_file(), "w")
         file.write(str(os.getpid()))
         file.close()
@@ -246,14 +255,14 @@ class SensorMonitor:
     @staticmethod
     def run():
         if SensorMonitor.is_already_running():
-            logging.debug("Aborting startup due to existing process")
+            logging.info("Aborting startup due to existing process")
             return
 
         SensorMonitor.save_process_lock()
         SensorMonitor.latest_data = {}
         SensorMonitor.lock = threading.Lock()
 
-        logging.info("Starting application")
+        logging.info("Starting sensors")
         SensorMonitor.setup_sensors()
 
         logging.info("Starting sender thread")
