@@ -38,28 +38,31 @@ class SensorMonitor:
 
         auth = None
 
-        if Config.get("Server.Username") is not None and Config.get("Server.Password") is not None:
+        if (
+            Config.get("Server.Username") is not None
+            and Config.get("Server.Password") is not None
+        ):
             auth = (
                 Config.get("Server.Username", None),
-                Config.get("Server.Password", None)
+                Config.get("Server.Password", None),
             )
 
         headers = Config.get("Server.Headers")
 
         try:
-            response = session.post(
-                url=url,
-                json=data,
-                auth=auth,
-                headers=headers
-            )
+            response = session.post(url=url, json=data, auth=auth, headers=headers)
         except requests.exceptions.RequestException as e:
             logging.error("Exception while trying to send data")
             logging.error(e)
             return False
 
         if response.status_code < 200 or response.status_code > 299:
-            logging.error("Received status code " + str(response.status_code) + " with body: " + response.text)
+            logging.error(
+                "Received status code "
+                + str(response.status_code)
+                + " with body: "
+                + response.text
+            )
             return False
         try:
             json.loads(response.text)
@@ -91,7 +94,9 @@ class SensorMonitor:
                 precision = 0
 
             topic = entry["topic"]
-            message = str(SensorMonitor.aggregate_data(entry["values"].values(), precision))
+            message = str(
+                SensorMonitor.aggregate_data(entry["values"].values(), precision)
+            )
             if client is None:
                 logging.error("MQTT client is none!")
             result = client.publish(topic, message)
@@ -115,7 +120,7 @@ class SensorMonitor:
                 client = None
 
         if client is None:
-            client_id = 'sensormonitor-mqtt-' + os.uname()[1] + '-'
+            client_id = "sensormonitor-mqtt-" + os.uname()[1] + "-"
             os.getpid()
             client = mqtt_client.Client(client_id)
             SensorMonitor.mqtt_client = client
@@ -155,12 +160,12 @@ class SensorMonitor:
 
         with SensorMonitor.lock:
             for entry in data:
-                key = entry['group'] + '/' + entry['name']
+                key = entry["group"] + "/" + entry["name"]
                 if key not in SensorMonitor.latest_data:
                     SensorMonitor.latest_data[key] = entry
                 else:
-                    for t in entry['values']:
-                        SensorMonitor.latest_data[key]['values'][t] = entry['values'][t]
+                    for t in entry["values"]:
+                        SensorMonitor.latest_data[key]["values"][t] = entry["values"][t]
 
         return data
 
@@ -169,19 +174,19 @@ class SensorMonitor:
         SensorMonitor.sensors = []
         for data in Config.get("Sensors"):
             sensor = Sensor(data)
-            if sensor.get_config('Active', True):
+            if sensor.get_config("Active", True):
                 SensorMonitor.sensors.append(sensor)
 
     @staticmethod
     def get_process_lock_file():
-        return os.path.dirname(__file__) + '/.sensors.lock'
+        return os.path.dirname(__file__) + "/.sensors.lock"
 
     @staticmethod
     def pid_exists(pid):
         if pid < 0:
             return False
         if pid == 0:
-            raise ValueError('invalid PID 0')
+            raise ValueError("invalid PID 0")
         try:
             os.kill(pid, 0)
         except OSError as err:
@@ -200,7 +205,7 @@ class SensorMonitor:
         if not os.path.exists(filename):
             return False
 
-        file = open(filename, 'r')
+        file = open(filename, "r")
         pid = file.read()
         file.close()
 
@@ -213,7 +218,7 @@ class SensorMonitor:
 
     @staticmethod
     def save_process_lock():
-        file = open(SensorMonitor.get_process_lock_file(), 'w')
+        file = open(SensorMonitor.get_process_lock_file(), "w")
         file.write(str(os.getpid()))
         file.close()
 
@@ -241,20 +246,22 @@ class SensorMonitor:
     @staticmethod
     def run():
         if SensorMonitor.is_already_running():
-            logging.debug('Aborting startup due to existing process')
+            logging.debug("Aborting startup due to existing process")
             return
 
         SensorMonitor.save_process_lock()
         SensorMonitor.latest_data = {}
         SensorMonitor.lock = threading.Lock()
 
-        logging.info('Starting application')
+        logging.info("Starting application")
         SensorMonitor.setup_sensors()
 
-        logging.info('Starting sender thread')
-        SensorMonitor.sender_thread = threading.Thread(target=SensorMonitor.send_data_loop)
+        logging.info("Starting sender thread")
+        SensorMonitor.sender_thread = threading.Thread(
+            target=SensorMonitor.send_data_loop
+        )
         SensorMonitor.sender_thread.start()
-        logging.info('Started sender thread, proceeding to main loop')
+        logging.info("Started sender thread, proceeding to main loop")
 
         while True:
             loop_started = time.time()
