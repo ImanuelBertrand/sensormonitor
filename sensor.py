@@ -16,6 +16,7 @@ from sensor_gme680 import SensorGme680
 from sensor_htu31d import SensorHtu31d
 from sensor_sgp30 import SensorSgp30
 from sensor_shtc3 import SensorShtc3
+from sensor_scd30 import SensorScd30
 
 
 class Sensor(AbstractSensor):
@@ -54,6 +55,11 @@ class Sensor(AbstractSensor):
         if "gme680" not in self.devices:
             self.devices["gme680"] = SensorGme680(self.config)
         return self.devices["gme680"]
+
+    def get_scd30(self):
+        if "scd30" not in self.devices:
+            self.devices["scd30"] = SensorScd30(self.config)
+        return self.devices["scd30"]
 
     def validate_config(self):
         if not self.backend:
@@ -223,6 +229,39 @@ class Sensor(AbstractSensor):
 
         return results
 
+    def __read_scd30(self):
+        try:
+            measurements = self.get_scd30().read()
+            if measurements is None:
+                return None
+            co2, temperature, relative_humidity = measurements
+        except IOError:
+            return None
+
+        results = []
+
+        t = self.get_time()
+
+        for key in self.get_readout_keys():
+            index = self.get_config("SCD30.Index", readout_key=key)
+            if index is None:
+                raise Exception("SCD30.Index not defined for readout " + key + "!")
+
+            if index == "temperature":
+                _value = temperature + self.get_config("Offset", 0, key)
+            elif index == "humidity":
+                _value = relative_humidity + self.get_config("Offset", 0, key)
+            elif index == "co2":
+                _value = co2 + self.get_config("Offset", 0, key)
+            else:
+                raise Exception("Invalid SCD30.Index for readout " + key + "!")
+
+            _result = self.get_result_template(key)
+            _result["values"][t] = _value
+            results.append(_result)
+
+        return results
+
     def should_read_now(self):
         return time.time() - self.last_read >= Config.get_interval(
             self.get_config("Interval", "1s")
@@ -252,6 +291,10 @@ class Sensor(AbstractSensor):
 
             if self.backend == "ahtx0":
                 self.last_value = self.__read_ahtx0()
+                return self.last_value
+
+            if self.backend == "scd30":
+                self.last_value = self.__read_scd30()
                 return self.last_value
 
             if self.backend == "random":

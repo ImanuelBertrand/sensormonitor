@@ -12,6 +12,9 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S%z",
 )
 
+logging.info("Starting SensorMonitor")
+
+
 try:
     SensorMonitor.run()
 except Exception as e:

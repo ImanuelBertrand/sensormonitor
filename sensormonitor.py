@@ -5,6 +5,7 @@ import os
 import statistics
 import threading
 import time
+import traceback
 
 import requests
 from paho.mqtt import client as mqtt_client
@@ -245,6 +246,7 @@ class SensorMonitor:
                 SensorMonitor.send_aggregated_data_mqtt(entries)
             except Exception as e:
                 logging.error(e)
+                logging.error(traceback.format_exc())
                 pass
 
             sleep_time = max([0, interval - time.time() + loop_started])
